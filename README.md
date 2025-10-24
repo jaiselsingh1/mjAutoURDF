@@ -1,2 +1,0 @@
-# mjAutoURDF
-mujoco impl 

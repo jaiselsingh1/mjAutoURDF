@@ -1,0 +1,23 @@
+[project]
+name = "creativemachines"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "torch",
+    "torchvision",
+    # "pytorch3d",
+    "open3d",
+    "matplotlib",
+    "networkx",
+    "scipy",
+    "scikit-learn",
+    "tqdm",
+    "pyvista",
+    "pymeshfix",
+    "mcubes",
+    "transforms3d",
+    "seaborn",
+    "pandas",
+]
