@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy",
     "torch",
     "torchvision",
     # "pytorch3d",
@@ -20,4 +21,5 @@ dependencies = [
     "transforms3d",
     "seaborn",
     "pandas",
+    "gymnasium>=1.2.1",
 ]
