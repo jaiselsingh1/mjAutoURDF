@@ -22,4 +22,5 @@ dependencies = [
     "seaborn",
     "pandas",
     "gymnasium>=1.2.1",
+    "tyro>=0.9.35",
 ]
