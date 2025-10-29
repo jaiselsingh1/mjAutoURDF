@@ -106,4 +106,45 @@ class SimEnv:
                         )
                return joint_map
         
+        def _make_cameras(self, radius: float, num_cameras: int, cam_angle_deg: float):
+                """sample camera poses on a ring/ hemisphere around the robot"""
+                if num_cameras < 20:
+                        theta = np.linspace(0, 2 * np.pi, num_cameras, endpoint = False)
+                        phi = np.deg2rad(cam_angle_deg) * np.ones_like(theta)
+                else:
+                        theta = np.random.rand(num_cameras) * 2 * np.pi
+                        phi = np.random.rand(num_cameras) * (0.5 * np.pi)
+                
+                xs = radius * np.cos(theta) * np.cos(phi)
+                ys = radius * np.sin(theta) * np.cos(phi)
+                zs = radius * np.sin(phi)
+
+                cams = []
+                for x, y, z in zip(xs, ys, zs):
+                        cams.append(
+                                camera_spec(pos = np.array([x, y, z], dtype = float),)
+                        )
+                return cams 
+        
+        def set_joint_positions(self, commands: np.ndarray):
+                """teleport the joints to target angles (radians), update mj_forward, return dict of final joint positions"""
+                # set commanded joints 
+                for val, jname in zip(commands, self.dof_names):
+                        info = self.joint_map[jname]
+                        lo, hi = info.limit 
+                        self.data.qpos[info.qpos_adr] = float(np.clip(val, lo, hi))
+                
+                mujoco.mj_forward(self.model, self.data)
+
+                # dict of final joint positions (including the non commanded ones)
+                joint_positions = {}
+                for jname in self.joint_names:
+                        info = self.joint_map[jname]
+                        joint_positions[jname] = float(self.data.qpos[info.qpos_adr])
+                return joint_positions
+        
+        
+
+
+
         
