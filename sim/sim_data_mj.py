@@ -143,8 +143,17 @@ class SimEnv:
                         joint_positions[jname] = float(self.data.qpos[info.qpos_adr])
                 return joint_positions
         
+        def render_camera(self, camera_index: int):
+                """set mujoco free camera to cameras[camera_index] then return (rgb, depth)"""
+                cam = self.cameras[camera_index]
+                cam.apply_to_freecam(self.renderer.camera)
+                self.renderer.update_scene(self.data)
+
+                rgb = self.renderer.render() # (h, w, 3)
+                depth = self.renderer.read_depth() # (h, w), float32 in meters 
+                
+                return rgb, depth, cam # camera return for base knowledge 
         
-
-
-
-        
+        def reset(self):
+                mujoco.mj_resetData(self.model, self.data)
+                        
