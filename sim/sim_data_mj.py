@@ -1,6 +1,6 @@
 import mujoco 
 from mujoco import mjtJoint, mjtObj
-import math, os, numpy as np
+import math, os, numpy as np, imageio.v3 as iio 
 from typing import NamedTuple
 import tyro 
 from dataclasses import dataclass, field
@@ -153,7 +153,78 @@ class SimEnv:
                 depth = self.renderer.read_depth() # (h, w), float32 in meters 
                 
                 return rgb, depth, cam # camera return for base knowledge 
-        
+
         def reset(self):
                 mujoco.mj_resetData(self.model, self.data)
-                        
+                mujoco.mj_forward(self.model, self.data)
+
+def angle_list(num_step, dof, joint_limits, seed_i = 0):
+        np.random.seed(seed_i)
+        jl_deg = joint_limits * 180 / np.pi 
+        start = (jl_deg[:,0] + jl_deg[:, 1]) / 2.0 
+        angles = [] 
+
+        for _ in range(num_step):
+                tgt = [np.random.uniform(lo, hi) for (lo, hi) in jl_deg]
+                angles.append(np.deg2rad(tgt))
+        return np.asarray(angles)
+
+def save_rgb_depth(out_dir: str, step_id: int, cam_id: int, rgb, depth_m):
+        os.makedirs(out_dir, exist_ok=True)
+        iio.imwrite(os.path.join(out_dir, f"{step_id:04d}_cam{cam_id:02d}_rgb.png"), rgb)
+        depth_mm = np.clip(depth_m * 1000.0, 0, np.iinfo(np.uint16).max).astype(np.uint16)
+        iio.imwrite(os.path.join(out_dir, f"{step_id:04d}_cam{cam_id:02d}_depth.png"), depth_mm)
+
+@dataclass
+class Config:
+        # model + env 
+        model_path: str 
+        dof: int = 6 
+        radius: float = 1.5 
+        num_cameras: int = 8 
+        cam_angle_deg: float = 20.0 
+        width: int = 800
+        height: int = 800
+        settle_physics: bool = False
+        settle_steps: int = 120
+
+        # dataset
+        out_dir: str = "data_rgbd"
+        num_steps: int = 10
+        seed: int = 0
+
+def main(cfg: Config):
+    env = SimEnv(
+        model_path=cfg.model_path,
+        dof=cfg.dof,
+        radius=cfg.radius,
+        num_cameras=cfg.num_cameras,
+        cam_angle_deg=cfg.cam_angle_deg,
+        width=cfg.width,
+        height=cfg.height,
+        settle_physics=cfg.settle_physics,
+        settle_steps=cfg.settle_steps,
+    )
+
+    a_list = angle_list(
+        num_step=cfg.num_steps,
+        dof=cfg.dof,
+        joint_limits=env.joint_limits,
+        seed_i=cfg.seed,
+    )
+
+    for step_id in range(cfg.num_steps):
+        env.set_joint_positions(a_list[step_id])
+        for cam_id in range(cfg.num_cameras):
+            rgb, depth, cam = env.render_camera(cam_id)
+            save_rgb_depth(cfg.out_dir, step_id, cam_id, rgb, depth)
+
+if __name__ == "__main__":
+    main(tyro.cli(Config))
+        
+"""python sim_data_mj.py \
+  --model-path ../menagerie/franka_fr3/scene.xml \
+  --dof 6 --radius 1.5 --num-cameras 8 \
+  --width 640 --height 480 \
+  --out-dir data_rgbd --num-steps 10 --seed 0
+"""

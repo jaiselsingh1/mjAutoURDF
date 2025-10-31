@@ -23,4 +23,6 @@ dependencies = [
     "pandas",
     "gymnasium>=1.2.1",
     "tyro>=0.9.35",
+    "imageio>=2.37.0",
+    "mujoco>=3.3.7",
 ]
