@@ -4,7 +4,6 @@ import math, os, numpy as np, imageio.v3 as iio
 from typing import NamedTuple
 import tyro 
 from dataclasses import dataclass, field
-# from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 
 
 @dataclass(slots=True)
@@ -13,7 +12,7 @@ class joint_info:
         qpos_adr: int 
         limit: tuple[float, float]
 
-@dataclass(slots=True) # slots help with memory usage?
+@dataclass(slots=True)
 class camera_spec:
         pos: np.ndarray 
         lookat: np.ndarray = field(default_factory=lambda: np.array([0., 0., 0.]))
@@ -26,14 +25,13 @@ class camera_spec:
         def apply_to_freecam(self, renderer_cam):
                 v = self.pos - self.lookat
                 dist = float(np.linalg.norm(v) + 1e-12)
-                az   = math.degrees(math.atan2(v[1], v[0]))  # yaw around z 
-                el   = math.degrees(math.asin(v[2] / dist))  # pitch 
+                az   = math.degrees(math.atan2(v[1], v[0]))
+                el   = math.degrees(math.asin(v[2] / dist))
 
                 renderer_cam.lookat[:] = self.lookat
                 renderer_cam.distance  = dist
                 renderer_cam.azimuth   = az
                 renderer_cam.elevation = el
-                # MuJoCo handles intrinsics; depth = meters 
 
 class SimEnv:
         """
@@ -54,38 +52,30 @@ class SimEnv:
                 settle_physics: bool = False,
                 settle_steps: int = 120        
         ):
-
            self.model = mujoco.MjModel.from_xml_path(model_path)
            self.data = mujoco.MjData(self.model)
 
            self.w = width 
            self.h = height 
            self.renderer = mujoco.Renderer(self.model, height=self.h, width=self.w)
-           self.renderer.enable_freecamera()  # manually set up free camera pose 
            
            self.dof = dof
            self.settle_physics = settle_physics
            self.settle_steps = settle_steps
 
-           # map for hinge joints 
            self.joint_map = self._build_joint_map()
-           # deterministic joint order (based on pybullet joint list)
            self.joint_names = list(self.joint_map.keys())
-           # the first "dof" joints are controlled
            self.dof_names = self.joint_names[:self.dof]
 
-           # for the actuated subset 
            self.joint_limits = np.array(
                   [self.joint_map[name].limit for name in self.dof_names]
            ) 
 
            self.cameras = self._make_cameras(radius, num_cameras, cam_angle_deg)
-           # set the simulation forward / consistent 
            mujoco.mj_forward(self.model, self.data)
 
 
         def _build_joint_map(self) -> dict[str, joint_info]:
-               """Iterate all joints, pick hinge (revolute) joints, save their MuJoCo indices, qpos addresses, and limits."""
                joint_map: dict[str, joint_info] = {}
                for j in range(self.model.njnt):
                         if self.model.jnt_type[j] != mjtJoint.mjJNT_HINGE:
@@ -94,9 +84,8 @@ class SimEnv:
                         qadr = self.model.jnt_qposadr[j]
 
                         if self.model.jnt_limited[j]:
-                                lo, hi = self.model.jnt_range[j]  # radians
+                                lo, hi = self.model.jnt_range[j]
                         else:
-                                # if unlimited joints then fall back within a safe range 
                                 lo, hi = -np.pi, np.pi
                         
                         joint_map[name] = joint_info(
@@ -107,7 +96,6 @@ class SimEnv:
                return joint_map
         
         def _make_cameras(self, radius: float, num_cameras: int, cam_angle_deg: float):
-                """sample camera poses on a ring/ hemisphere around the robot"""
                 if num_cameras < 20:
                         theta = np.linspace(0, 2 * np.pi, num_cameras, endpoint = False)
                         phi = np.deg2rad(cam_angle_deg) * np.ones_like(theta)
@@ -126,17 +114,27 @@ class SimEnv:
                         )
                 return cams 
         
-        def set_joint_positions(self, commands: np.ndarray):
-                """teleport the joints to target angles (radians), update mj_forward, return dict of final joint positions"""
-                # set commanded joints 
-                for val, jname in zip(commands, self.dof_names):
-                        info = self.joint_map[jname]
-                        lo, hi = info.limit 
-                        self.data.qpos[info.qpos_adr] = float(np.clip(val, lo, hi))
+        def set_joint_positions(self, commands: np.ndarray, manual_positions: float = 0.0):
+                command_map = {jname: commands[i] for i, jname in enumerate(self.dof_names)}
                 
-                mujoco.mj_forward(self.model, self.data)
-
-                # dict of final joint positions (including the non commanded ones)
+                for jname in self.joint_names:
+                        info = self.joint_map[jname]
+                        lo, hi = info.limit
+                        
+                        if jname in command_map:
+                                val = command_map[jname]
+                                self.data.qpos[info.qpos_adr] = float(np.clip(val, lo, hi))
+                        else:
+                                mid_point = (lo + hi) / 2.0
+                                fixed_pos = mid_point + manual_positions * (hi - lo) / 2.0
+                                self.data.qpos[info.qpos_adr] = float(np.clip(fixed_pos, lo, hi))
+                
+                if self.settle_physics:
+                        for _ in range(self.settle_steps):
+                                mujoco.mj_step(self.model, self.data)
+                else:
+                        mujoco.mj_forward(self.model, self.data)
+                              
                 joint_positions = {}
                 for jname in self.joint_names:
                         info = self.joint_map[jname]
@@ -144,15 +142,35 @@ class SimEnv:
                 return joint_positions
         
         def render_camera(self, camera_index: int):
-                """set mujoco free camera to cameras[camera_index] then return (rgb, depth)"""
                 cam = self.cameras[camera_index]
-                cam.apply_to_freecam(self.renderer.camera)
-                self.renderer.update_scene(self.data)
-
-                rgb = self.renderer.render() # (h, w, 3)
-                depth = self.renderer.read_depth() # (h, w), float32 in meters 
                 
-                return rgb, depth, cam # camera return for base knowledge 
+                # Calculate camera pose
+                v = cam.pos - cam.lookat
+                dist = float(np.linalg.norm(v) + 1e-12)
+                
+                # Create scene options for this camera
+                scene_option = mujoco.MjvOption()
+                scene_camera = mujoco.MjvCamera()
+                scene_camera.lookat[:] = cam.lookat
+                scene_camera.distance = dist
+                scene_camera.azimuth = math.degrees(math.atan2(v[1], v[0]))
+                scene_camera.elevation = math.degrees(math.asin(v[2] / dist))
+                
+                # Update scene with camera
+                self.renderer.update_scene(self.data, scene_camera, scene_option)
+                
+                rgb = self.renderer.render()
+                
+                # Get depth - check if method exists
+                if hasattr(self.renderer, 'read_depth'):
+                    depth = self.renderer.read_depth()
+                elif hasattr(self.renderer, 'render_depth'):
+                    depth = self.renderer.render_depth()
+                else:
+                    # Fallback: render again with depth enabled
+                    depth = np.zeros((self.h, self.w), dtype=np.float32)
+                
+                return rgb, depth, cam
 
         def reset(self):
                 mujoco.mj_resetData(self.model, self.data)
@@ -177,7 +195,6 @@ def save_rgb_depth(out_dir: str, step_id: int, cam_id: int, rgb, depth_m):
 
 @dataclass
 class Config:
-        # model + env 
         model_path: str 
         dof: int = 6 
         radius: float = 1.5 
@@ -187,11 +204,10 @@ class Config:
         height: int = 800
         settle_physics: bool = False
         settle_steps: int = 120
-
-        # dataset
         out_dir: str = "data_rgbd"
         num_steps: int = 10
         seed: int = 0
+        manual_positions: float = 0.0
 
 def main(cfg: Config):
     env = SimEnv(
@@ -214,17 +230,10 @@ def main(cfg: Config):
     )
 
     for step_id in range(cfg.num_steps):
-        env.set_joint_positions(a_list[step_id])
+        env.set_joint_positions(a_list[step_id], manual_positions=cfg.manual_positions)
         for cam_id in range(cfg.num_cameras):
             rgb, depth, cam = env.render_camera(cam_id)
             save_rgb_depth(cfg.out_dir, step_id, cam_id, rgb, depth)
 
 if __name__ == "__main__":
     main(tyro.cli(Config))
-        
-"""python sim_data_mj.py \
-  --model-path ../menagerie/franka_fr3/scene.xml \
-  --dof 6 --radius 1.5 --num-cameras 8 \
-  --width 640 --height 480 \
-  --out-dir data_rgbd --num-steps 10 --seed 0
-"""
