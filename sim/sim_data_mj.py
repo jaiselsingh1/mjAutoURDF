@@ -160,17 +160,22 @@ class SimEnv:
                 self.renderer.update_scene(self.data, scene_camera, scene_option)
                 
                 rgb = self.renderer.render()
+                 
+                # enable depth rendering 
+                self.renderer.enable_depth_rendering()
+                self.renderer.update_scene(self.data, scene_camera, scene_option)
+                depth = self.renderer.render()
+
+                # depth is rendered as an image where pixel intensity = depth (extract depth values)
+                if depth.ndim == 3:
+                       depth = depth[:, :, 0]
+
+                self.renderer.disable_depth_rendering()
+                return rgb, depth.astype(np.float32), cam
+
+
+
                 
-                # Get depth - check if method exists
-                if hasattr(self.renderer, 'read_depth'):
-                    depth = self.renderer.read_depth()
-                elif hasattr(self.renderer, 'render_depth'):
-                    depth = self.renderer.render_depth()
-                else:
-                    # Fallback: render again with depth enabled
-                    depth = np.zeros((self.h, self.w), dtype=np.float32)
-                
-                return rgb, depth, cam
 
         def reset(self):
                 mujoco.mj_resetData(self.model, self.data)
