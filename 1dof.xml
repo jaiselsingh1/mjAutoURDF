@@ -1,0 +1,21 @@
+<mujoco model="1dof">
+  <compiler angle="radian" meshdir="assets"/>
+
+  <worldbody>
+    <body name="ellipse">
+        <geom name="ellipse" type="ellipsoid" size="1.0 1.0 2.0"/> 
+        <joint name="joint" type="hinge" axis="1 0 0"/>
+        <site name="ellipse"/>
+    </body>
+
+  </worldbody>
+
+  <actuator>
+    <motor name="ellipse" joint="joint" gear="1000"/>
+  </actuator>
+
+  <sensor>
+    <torque name="torque" site="ellipse"/>
+  </sensor>
+
+</mujoco>

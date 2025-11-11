@@ -25,4 +25,5 @@ dependencies = [
     "tyro>=0.9.35",
     "imageio>=2.37.0",
     "mujoco>=3.3.7",
+    "ipython>=9.7.0",
 ]

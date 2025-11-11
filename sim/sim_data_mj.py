@@ -173,10 +173,6 @@ class SimEnv:
                 self.renderer.disable_depth_rendering()
                 return rgb, depth.astype(np.float32), cam
 
-
-
-                
-
         def reset(self):
                 mujoco.mj_resetData(self.model, self.data)
                 mujoco.mj_forward(self.model, self.data)
